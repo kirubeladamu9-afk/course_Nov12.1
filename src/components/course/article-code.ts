@@ -195,21 +195,30 @@ export const splitHtmlCodeBlocks = (html: string): ArticleHtmlSegment[] => {
   const template = document.createElement('template')
   template.innerHTML = html
   const segments: ArticleHtmlSegment[] = []
-  let htmlBuffer = document.createElement('div')
-  const flushHtml = () => {
-    if (!htmlBuffer.childNodes.length) return
-    segments.push({ type: 'html', html: htmlBuffer.innerHTML })
-    htmlBuffer = document.createElement('div')
-  }
-  Array.from(template.content.childNodes).forEach((node) => {
-    if (node instanceof Element && node.tagName === 'PRE') {
-      flushHtml()
-      const language = node.querySelector('code')?.className.match(/language-([\w+#-]+)/)?.[1] ?? ''
-      segments.push({ type: 'code', code: readCodeText(node).replace(/\n$/, ''), language })
-      return
+  const splitNodes = (nodes: ChildNode[], wrapper: Element | null) => {
+    const createBuffer = () => (wrapper ? wrapper.cloneNode(false) as Element : document.createElement('div'))
+    let htmlBuffer = createBuffer()
+    const flushHtml = () => {
+      if (!htmlBuffer.childNodes.length) return
+      segments.push({ type: 'html', html: wrapper ? htmlBuffer.outerHTML : htmlBuffer.innerHTML })
+      htmlBuffer = createBuffer()
     }
-    htmlBuffer.appendChild(node)
-  })
-  flushHtml()
+    nodes.forEach((node) => {
+      if (node instanceof Element && node.tagName === 'PRE') {
+        flushHtml()
+        const language = node.querySelector('code')?.className.match(/language-([\w+#-]+)/)?.[1] ?? ''
+        segments.push({ type: 'code', code: readCodeText(node).replace(/\n$/, ''), language })
+        return
+      }
+      if (node instanceof Element && node.querySelector('pre')) {
+        flushHtml()
+        splitNodes(Array.from(node.childNodes), node)
+        return
+      }
+      htmlBuffer.appendChild(node)
+    })
+    flushHtml()
+  }
+  splitNodes(Array.from(template.content.childNodes), null)
   return segments
 }
