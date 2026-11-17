@@ -95,7 +95,7 @@ import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import AccountSecurity, { SecurityNotifications } from './account-security'
 import { type AdminCourse, type ArticleContentBlock, type ArticleVocabularyEntry, type SimulationConfig, type StepByStepSolverLearnerConfig } from '@/components/admin/admin-data'
 import { ArticleCodeBlock, ArticleHtmlWithCode } from '@/components/course/article-code-block'
-import { splitCodeFences } from '@/components/course/article-code'
+import { joinUnclosedSections, nextOpenFence, splitCodeFences } from '@/components/course/article-code'
 import { getArticleSectionTitles } from '@/lib/article-sections'
 import { ArticleCheckpointCard, ArticleSectionHelp } from './article-interactions'
 import { type LearnerArticleCheckpoint, splitArticleFragments } from '@/lib/article-checkpoints'
@@ -1943,14 +1943,30 @@ const ArticleIllustration: FC<{ title: string; description: string; imageUrl?: s
   </Box>
 }
 
+const keepCodeFencesWhole = (blocks: ArticleContentBlock[]): ArticleContentBlock[] => {
+  const merged: ArticleContentBlock[] = []
+  let openFence: string | null = null
+  for (const block of blocks) {
+    if (block.type === 'image') {
+      merged.push(block)
+      continue
+    }
+    const last = merged[merged.length - 1]
+    if (openFence && last?.type === 'text') merged[merged.length - 1] = { type: 'text', text: `${last.text}\n${block.text}` }
+    else merged.push(block)
+    openFence = block.text.split('\n').reduce<string | null>((open, line) => nextOpenFence(line, open), openFence)
+  }
+  return merged
+}
+
 const ArticleLessonContent: FC<{ description: string; blocks?: ArticleContentBlock[]; vocabulary?: ArticleVocabularyEntry[]; checkpoints?: LearnerArticleCheckpoint[]; helpDisabledSections?: number[]; enrollmentId: number; lessonId: number; interactive: boolean; onFinalPageChange: (isFinal: boolean) => void }> = ({ description, blocks, vocabulary, checkpoints, helpDisabledSections, enrollmentId, lessonId, interactive, onFinalPageChange }) => {
   const pages = useMemo(() => {
     if (!blocks?.length) {
-      const sections = description.split(/(?=<h[1-6][^>]*>)|\n(?=(?:#{1,6}\s+|\d+[.)]\s+))/i).filter((section) => section.trim())
+      const sections = joinUnclosedSections(description.split(/(?=<h[1-6][^>]*>)|\n(?=(?:#{1,6}\s+|\d+[.)]\s+))/i)).filter((section) => section.trim())
       return sections.map((section) => [{ type: 'text' as const, text: section }])
     }
     const nextPages: ArticleContentBlock[][] = [[]]
-    blocks.forEach((block) => {
+    keepCodeFencesWhole(blocks).forEach((block) => {
       if (block.type === 'heading' && nextPages[nextPages.length - 1].length) nextPages.push([])
       nextPages[nextPages.length - 1].push(block)
     })

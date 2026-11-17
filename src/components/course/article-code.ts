@@ -154,6 +154,34 @@ export const splitCodeFences = (text: string): ArticleTextSegment[] => {
   return segments.length ? segments : [{ type: 'text', text }]
 }
 
+const openingFenceMarker = (line: string) => line.match(/^\s*(`{3,}|~{3,})\s*([\w+#.-]*)\s*$/)?.[1] ?? null
+
+export const nextOpenFence = (line: string, open: string | null) => {
+  if (open) return isClosingFence(line, open) ? null : open
+  return openingFenceMarker(line)
+}
+
+export const hasUnclosedCode = (text: string) => {
+  const openFence = text.split('\n').reduce<string | null>((open, line) => nextOpenFence(line, open), null)
+  const preOpens = text.match(/<pre\b/gi)?.length ?? 0
+  const preCloses = text.match(/<\/pre>/gi)?.length ?? 0
+  return openFence !== null || preOpens > preCloses
+}
+
+export const joinUnclosedSections = (sections: string[]) => {
+  const joined: string[] = []
+  let pending: string | null = null
+  for (const section of sections) {
+    pending = pending === null ? section : `${pending}\n${section}`
+    if (!hasUnclosedCode(pending)) {
+      joined.push(pending)
+      pending = null
+    }
+  }
+  if (pending !== null) joined.push(pending)
+  return joined
+}
+
 const readCodeText = (node: Node): string => {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
   if (!(node instanceof Element)) return ''
