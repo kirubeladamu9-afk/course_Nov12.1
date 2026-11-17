@@ -40,6 +40,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import CelebrationOutlinedIcon from '@mui/icons-material/CelebrationOutlined'
+import FullscreenOutlinedIcon from '@mui/icons-material/FullscreenOutlined'
+import FullscreenExitOutlinedIcon from '@mui/icons-material/FullscreenExitOutlined'
 import ClassOutlinedIcon from '@mui/icons-material/ClassOutlined'
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined'
@@ -2082,8 +2084,16 @@ const ArticleLessonContent: FC<{ description: string; blocks?: ArticleContentBlo
     }
     return <Typography key={key} variant="body1" sx={{ mb: 3, lineHeight: 2, fontSize: { xs: '1rem', md: '1.08rem' }, color: 'text.primary' }}>{block}</Typography>
   }
-  return <Box>
+  const [immersive, setImmersive] = useState(false)
+  useEffect(() => {
+    if (!immersive) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setImmersive(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [immersive])
+  return <Box sx={immersive ? { position: 'fixed', inset: 0, zIndex: 'modal', overflowY: 'auto', bgcolor: 'background.default', p: { xs: 2, md: 4 } } : undefined}>
     <Box sx={{ mb: 3 }}><Typography variant="body1" color="text.secondary" sx={{ fontWeight: 700, mb: 1 }}>Page {page + 1} of {totalPages}</Typography><LinearProgress variant="determinate" value={((page + 1) / totalPages) * 100} aria-label={`Article progress: page ${page + 1} of ${totalPages}`} sx={{ height: 12, borderRadius: 6, backgroundColor: 'action.hover', '& .MuiLinearProgress-bar': { borderRadius: 6 } }} /></Box>
+    <Button variant="outlined" size="small" aria-pressed={immersive} startIcon={immersive ? <FullscreenExitOutlinedIcon /> : <FullscreenOutlinedIcon />} onClick={() => setImmersive((current) => !current)} sx={{ alignSelf: 'flex-start', mb: 3 }}>{immersive ? 'Exit full screen' : 'Full screen'}</Button>
     {(readAloud.supported || vocabularyByWord.size > 0) && <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} spacing={1.5} sx={{ mb: 3, flexWrap: 'wrap' }}>
       {readAloud.supported && <Stack role="group" aria-label="Read aloud controls" direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
         {readAloud.status === 'idle' && <Button variant="contained" startIcon={<VolumeUpOutlinedIcon />} onClick={readAloud.play}>Read aloud</Button>}
@@ -2109,7 +2119,7 @@ const ArticleLessonContent: FC<{ description: string; blocks?: ArticleContentBlo
       <IconButton size="small" aria-label="Close word meaning" onClick={() => setWordLookup(null)}><CloseIcon fontSize="small" /></IconButton>
     </Paper>}
     {interactionsEnabled && interactionState && sectionTitles[currentSection] && !helpDisabledSections?.includes(currentSection) && <ArticleSectionHelp key={currentSection} sectionTitle={sectionTitles[currentSection] ?? 'this section'} helpRequest={interactionState.helpRequests.find((item) => item.sectionIndex === currentSection)} saving={savingInteraction} onFlag={() => saveSectionHelp(currentSection)} onAskQuestion={(question) => saveSectionHelp(currentSection, question)} />}
-    <Box ref={readingPaneRef} role="region" aria-label="Article text" tabIndex={0} onMouseUp={(event) => openWordMeaning({ x: event.clientX, y: event.clientY })} onKeyUp={(event) => { if (event.key === 'Shift' || event.key === 'Enter') openWordMeaning() }} sx={{ maxHeight: { xs: 440, md: 'min(68vh, 700px)' }, minHeight: 220, overflowY: 'auto', overflowX: 'hidden', pr: 2.5, scrollBehavior: 'smooth' }}>
+    <Box ref={readingPaneRef} role="region" aria-label="Article text" tabIndex={0} onMouseUp={(event) => openWordMeaning({ x: event.clientX, y: event.clientY })} onKeyUp={(event) => { if (event.key === 'Shift' || event.key === 'Enter') openWordMeaning() }} sx={{ maxHeight: immersive ? 'none' : { xs: 440, md: 'min(68vh, 700px)' }, minHeight: 220, overflowY: 'auto', overflowX: 'hidden', pr: 2.5, scrollBehavior: 'smooth' }}>
       {isLegacyRichText ? <Box sx={articleProseSx}>{renderLegacyFragments()}</Box> : <Box sx={articleProseSx}>{pageBlocks.map((block, index) => {
         if (block.type === 'heading') return <Typography key={`heading-${index}`} variant="h5" component="h2" sx={{ mt: index === 0 ? 0 : 4.5, mb: 2, fontWeight: 800, letterSpacing: '-0.02em' }}>{block.text}</Typography>
         if (block.type === 'image') return block.imageUrl ? <Box component="figure" key={`image-${index}`} sx={{ width: '100%', m: '28px 0 32px' }}><Box component="img" src={block.imageUrl} alt={block.caption || block.marker || 'Article supporting image'} sx={{ display: 'block', width: '100%', maxHeight: 580, objectFit: 'contain', borderRadius: 1.5 }} />{block.caption && <Typography component="figcaption" variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: '0.875rem' }}>{block.caption}</Typography>}</Box> : null
