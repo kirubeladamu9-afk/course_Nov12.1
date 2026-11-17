@@ -86,10 +86,10 @@ const DotNetPillars: FC = () => {
               {categories.map((category, index) => {
                 const color = accentColors[index % accentColors.length]
                 return (
-                  <Box component="article" key={category.name} sx={{ ...cardSx, '--accent': color, minHeight: { xs: 110, md: 124 }, p: { xs: 2.25, md: 2.5 }, display: 'flex', flexDirection: 'column', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', backgroundColor: '#f1f7f6', borderColor: '#d0d7de', borderRadius: 1.5 }}>
+                  <Box component="article" key={category.name} sx={{ ...cardSx, '--accent': color, minHeight: { xs: 110, md: 124 }, p: { xs: 2.25, md: 2.5 }, display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ width: 8, height: 8, mb: 2, borderRadius: '50%', backgroundColor: color }} />
-                    <Typography component="h3" sx={{ mb: 1, fontFamily: 'inherit', fontSize: '0.95rem', fontWeight: 600, lineHeight: 1.4, color: '#24292f' }}>{category.name}</Typography>
-                    <Typography sx={{ mt: 'auto', fontFamily: 'inherit', color: '#57606a', fontSize: 12, fontWeight: 400, lineHeight: 1.5 }}>{category.label}</Typography>
+                    <Typography component="h3" sx={{ mb: 1, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: '0.95rem', fontWeight: 600, lineHeight: 1.4, color: '#24292f' }}>{category.name}</Typography>
+                    <Typography sx={{ mt: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', color: '#57606a', fontSize: 12, fontWeight: 400, lineHeight: 1.5 }}>{category.label}</Typography>
                   </Box>
                 )
               })}
