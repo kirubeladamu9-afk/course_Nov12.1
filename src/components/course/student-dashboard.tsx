@@ -94,7 +94,8 @@ import NotificationsNoneOutlinedIcon from '@mui/icons-material/NotificationsNone
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import AccountSecurity, { SecurityNotifications } from './account-security'
 import { type AdminCourse, type ArticleContentBlock, type ArticleVocabularyEntry, type SimulationConfig, type StepByStepSolverLearnerConfig } from '@/components/admin/admin-data'
-import { sanitizeArticleHtml } from '@/lib/article-content'
+import { ArticleCodeBlock, ArticleHtmlWithCode } from '@/components/course/article-code-block'
+import { splitCodeFences } from '@/components/course/article-code'
 import { getArticleSectionTitles } from '@/lib/article-sections'
 import { ArticleCheckpointCard, ArticleSectionHelp } from './article-interactions'
 import { type LearnerArticleCheckpoint, splitArticleFragments } from '@/lib/article-checkpoints'
@@ -2039,7 +2040,7 @@ const ArticleLessonContent: FC<{ description: string; blocks?: ArticleContentBlo
     const nodes: ReactNode[] = []
     for (const [index, fragment] of pageFragments.entries()) {
       if (fragment.type === 'html') {
-        nodes.push(<Box key={`html-${index}`} dangerouslySetInnerHTML={{ __html: sanitizeArticleHtml(fragment.html) }} />)
+        nodes.push(<ArticleHtmlWithCode key={`html-${index}`} html={fragment.html} />)
         continue
       }
       const checkpoint = checkpointById.get(fragment.id)
@@ -2096,7 +2097,9 @@ const ArticleLessonContent: FC<{ description: string; blocks?: ArticleContentBlo
       {isLegacyRichText ? <Box sx={{ lineHeight: 2, '& p': { mb: 2.5, fontSize: { xs: '1rem', md: '1.08rem' } }, '& h1, & h2, & h3, & h4, & h5, & h6': { mt: 3.5, mb: 1.5, fontWeight: 800, letterSpacing: '-0.02em' }, '& blockquote': { m: '24px 0', p: { xs: 2, sm: 2.5 }, borderLeft: 4, borderColor: 'warning.main', borderRadius: 1.5, backgroundColor: (theme) => alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.16 : 0.1), fontWeight: 600 }, '& ul, & ol': { pl: 3, mb: 2.5 } }} >{renderLegacyFragments()}</Box> : pageBlocks.map((block, index) => {
         if (block.type === 'heading') return <Typography key={`heading-${index}`} variant="h5" component="h2" sx={{ mt: index === 0 ? 0 : 3.5, mb: 1.5, fontWeight: 800, letterSpacing: '-0.02em' }}>{block.text}</Typography>
         if (block.type === 'image') return block.imageUrl ? <Box component="figure" key={`image-${index}`} sx={{ width: '100%', m: '28px 0 32px' }}><Box component="img" src={block.imageUrl} alt={block.caption || block.marker || 'Article supporting image'} sx={{ display: 'block', width: '100%', maxHeight: 580, objectFit: 'contain', borderRadius: 1.5 }} />{block.caption && <Typography component="figcaption" variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: '0.875rem' }}>{block.caption}</Typography>}</Box> : null
-        return block.text.split(/\n+/).map((paragraph, paragraphIndex) => renderParagraph(paragraph, `${index}-${paragraphIndex}`))
+        return splitCodeFences(block.text).map((segment, segmentIndex) => segment.type === 'code'
+          ? <ArticleCodeBlock key={`${index}-code-${segmentIndex}`} code={segment.code} language={segment.language} />
+          : segment.text.split(/\n+/).map((paragraph, paragraphIndex) => renderParagraph(paragraph, `${index}-${segmentIndex}-${paragraphIndex}`)))
       })}
     </Box>
     <Stack direction={{ xs: 'column-reverse', sm: 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mt: 5 }}><Button size="large" variant="outlined" onClick={() => setPage((current) => current - 1)} disabled={page === 0} sx={{ minWidth: 140, py: 1.25 }}>Previous page</Button><Button size="large" variant="contained" onClick={() => setPage((current) => current + 1)} disabled={page === totalPages - 1 || checkpointsBlocked} sx={{ minWidth: 160, py: 1.25 }}>Next page</Button></Stack>
