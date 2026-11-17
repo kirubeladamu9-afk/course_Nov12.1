@@ -1,11 +1,14 @@
 import CheckOutlinedIcon from '@mui/icons-material/CheckOutlined'
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined'
 import { Box, Button, Stack, Typography } from '@mui/material'
+import { alpha, type Theme } from '@mui/material/styles'
 import { useMemo, useState, type FC } from 'react'
 import { sanitizeArticleHtml } from '@/lib/article-content'
 import { type CodeToken, type CodeTokenKind, highlightCode, languageLabels, resolveLanguage, splitHtmlCodeBlocks } from './article-code'
 
 const codeFont = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+
+export const articleProseSx = (theme: Theme) => ({ lineHeight: 2, '& p, & div': { mb: 3, fontSize: { xs: '1rem', md: '1.08rem' } }, '& h1, & h2, & h3, & h4, & h5, & h6': { mt: 4.5, mb: 2, fontWeight: 800, letterSpacing: '-0.02em' }, '& blockquote': { m: '24px 0', p: { xs: 2, sm: 2.5 }, borderLeft: 4, borderColor: 'warning.main', borderRadius: 1.5, backgroundColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.16 : 0.1), fontWeight: 600 }, '& ul, & ol': { pl: 3, mb: 3 }, '& li': { mb: 1 } })
 
 const tokenColors: Record<CodeTokenKind, string> = {
   plain: '#e2e8f0',
@@ -61,7 +64,7 @@ export const ArticleHtmlWithCode: FC<{ html: string }> = ({ html }) => {
   const segments = useMemo(() => splitHtmlCodeBlocks(sanitizeArticleHtml(html)), [html])
   return <>
     {segments.map((segment, index) => segment.type === 'html'
-      ? <Box key={index} dangerouslySetInnerHTML={{ __html: segment.html }} />
+      ? <Box key={index} sx={articleProseSx} dangerouslySetInnerHTML={{ __html: segment.html }} />
       : <ArticleCodeBlock key={index} code={segment.code} language={segment.language} />)}
   </>
 }
