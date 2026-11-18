@@ -417,14 +417,19 @@ const getErrorMessage = async (response: Response) => {
   return body?.message ?? 'Unable to complete your request.'
 }
 
+const unavailableApiMessage = 'Unable to connect to the CourseSpace API. Please try again when the server is available.'
+const idempotentMethods = new Set(['GET', 'HEAD'])
+
 const fetchApi = async (url: string, init?: RequestInit) => {
+  const retryable = idempotentMethods.has((init?.method ?? 'GET').toUpperCase())
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await fetch(url, { ...init, credentials: 'same-origin' })
     } catch (error) {
       if (init?.signal?.aborted) throw error
       if (!(error instanceof TypeError)) throw error
-      if (attempt >= 30) throw new Error('Unable to connect to the CourseSpace API. Please try again when the server is available.')
+      if (!retryable) throw new Error(unavailableApiMessage)
+      if (attempt >= 30) throw new Error(unavailableApiMessage)
       await new Promise((resolve) => window.setTimeout(resolve, Math.min(500 * 2 ** attempt, 2000)))
     }
   }

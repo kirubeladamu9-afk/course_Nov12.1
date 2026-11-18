@@ -2325,7 +2325,7 @@ const StudentDashboard: FC<StudentDashboardProps> = ({ darkMode, onToggleDarkMod
   const persistEngagement = (courseId: number, lessonId: number, activeSeconds: number) => {
     const enrollment = findCourseEnrollment(enrollments, courseId)
     if (!enrollment) return
-    void saveLessonEngagement(enrollment.id, lessonId, { activeSeconds }).catch(() => undefined)
+    void saveLessonEngagement(enrollment.id, lessonId, { activeSeconds, keepalive: true }).catch(() => undefined)
   }
 
   useEffect(() => {
