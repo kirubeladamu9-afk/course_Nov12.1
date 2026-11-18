@@ -20,7 +20,13 @@ const getTransporter = () => {
   const user = process.env.GMAIL_ADDRESS
   const pass = process.env.GMAIL_APP_PASSWORD
   if (!user || !pass) throw new Error('Gmail sender credentials are not configured.')
-  transporter ??= nodemailer.createTransport({ service: 'gmail', auth: { user, pass } })
+  transporter ??= nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
+  })
   return { transporter, from: user }
 }
 
