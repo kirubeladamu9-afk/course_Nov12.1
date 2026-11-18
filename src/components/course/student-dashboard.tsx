@@ -101,6 +101,7 @@ import { joinUnclosedSections, nextOpenFence, splitCodeFences } from '@/componen
 import { getArticleSectionTitles } from '@/lib/article-sections'
 import { ArticleCheckpointCard, ArticleSectionHelp } from './article-interactions'
 import { type LearnerArticleCheckpoint, splitArticleFragments } from '@/lib/article-checkpoints'
+import { reflowTextParagraphs } from '@/lib/article-content'
 import { getWordAtPoint, normalizeWord, useReadAloud } from '@/components/course/article-reading-tools'
 import { getCurriculumTopicKey, getMathTopic, getMathTopicForLesson, STEM_CURRICULUM, type MathTopic } from '@/components/admin/stem-curriculum'
 import { getPlatformEngine, type PlatformEngineId } from '@/components/stem-lab/platform-engine-library'
@@ -2125,7 +2126,7 @@ const ArticleLessonContent: FC<{ description: string; blocks?: ArticleContentBlo
         if (block.type === 'image') return block.imageUrl ? <Box component="figure" key={`image-${index}`} sx={{ width: '100%', m: '28px 0 32px' }}><Box component="img" src={block.imageUrl} alt={block.caption || block.marker || 'Article supporting image'} sx={{ display: 'block', width: '100%', maxHeight: 580, objectFit: 'contain', borderRadius: 1.5 }} />{block.caption && <Typography component="figcaption" variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: '0.875rem' }}>{block.caption}</Typography>}</Box> : null
         return splitCodeFences(block.text).map((segment, segmentIndex) => segment.type === 'code'
           ? <ArticleCodeBlock key={`${index}-code-${segmentIndex}`} code={segment.code} language={segment.language} />
-          : segment.text.split(/\n+/).map((paragraph, paragraphIndex) => renderParagraph(paragraph, `${index}-${segmentIndex}-${paragraphIndex}`)))
+          : reflowTextParagraphs(segment.text).map((paragraph, paragraphIndex) => renderParagraph(paragraph, `${index}-${segmentIndex}-${paragraphIndex}`)))
       })}</Box>}
     </Box>
     <Stack direction={{ xs: 'column-reverse', sm: 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mt: 5 }}><Button size="large" variant="outlined" onClick={() => setPage((current) => current - 1)} disabled={page === 0} sx={{ minWidth: 140, py: 1.25 }}>Previous page</Button><Button size="large" variant="contained" onClick={() => setPage((current) => current + 1)} disabled={page === totalPages - 1 || checkpointsBlocked} sx={{ minWidth: 160, py: 1.25 }}>Next page</Button></Stack>

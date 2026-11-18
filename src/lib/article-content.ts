@@ -96,10 +96,63 @@ const copySafeNode = (node: Node, target: Node) => {
   target.appendChild(clean)
 }
 
+const structuralLinePattern = /^(?:#{1,6}\s|\d+[.)]\s|[-*•]\s)/
+const sentenceEndPattern = /[.!?:;…"'”’)\]]$/
+
+const continuesParagraph = (previous: string, next: string) =>
+  !structuralLinePattern.test(previous) && !structuralLinePattern.test(next) && (!sentenceEndPattern.test(previous) || /^[a-z]/.test(next))
+
+export const reflowTextParagraphs = (text: string) => {
+  const paragraphs: string[] = []
+  let previous = ''
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    if (line && previous && continuesParagraph(previous, line)) paragraphs[paragraphs.length - 1] += ` ${line}`
+    else if (line) paragraphs.push(line)
+    previous = line
+  }
+  return paragraphs
+}
+
+export const textToArticleHtml = (text: string) => reflowTextParagraphs(text).map((paragraph) => {
+  const element = document.createElement('p')
+  element.textContent = paragraph
+  return element.outerHTML
+}).join('')
+
+const inlineTags = new Set(['A', 'B', 'CODE', 'EM', 'FONT', 'I', 'S', 'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'U'])
+
+const isWrappedTextBlock = (node: ChildNode): node is HTMLElement => node instanceof HTMLElement
+  && (node.tagName === 'P' || node.tagName === 'DIV')
+  && !node.hasAttribute('data-checkpoint-id')
+  && Boolean(node.textContent?.trim())
+  && Array.from(node.childNodes).every((child) => child.nodeType === Node.TEXT_NODE || (child instanceof HTMLElement && inlineTags.has(child.tagName)))
+
+const joinWrappedTextBlocks = (root: HTMLElement) => {
+  let previous: HTMLElement | null = null
+  let previousText = ''
+  for (const child of Array.from(root.childNodes)) {
+    if (child.nodeType === Node.TEXT_NODE && !child.textContent?.trim()) continue
+    if (!isWrappedTextBlock(child)) {
+      previous = null
+      continue
+    }
+    const text = child.textContent?.trim() ?? ''
+    if (previous && continuesParagraph(previousText, text)) {
+      previous.append(' ', ...Array.from(child.childNodes))
+      child.remove()
+    } else {
+      previous = child
+    }
+    previousText = text
+  }
+}
+
 export const sanitizeArticleHtml = (html: string) => {
   const parsed = new DOMParser().parseFromString(html, 'text/html')
   const clean = document.createElement('div')
   parsed.body.childNodes.forEach((child) => copySafeNode(child, clean))
+  joinWrappedTextBlocks(clean)
   return clean.innerHTML
 }
 

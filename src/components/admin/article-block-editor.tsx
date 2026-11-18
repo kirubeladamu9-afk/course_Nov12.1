@@ -40,7 +40,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { type FC, type ReactElement, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/components/toast'
-import { sanitizeArticleHtml } from '@/lib/article-content'
+import { sanitizeArticleHtml, textToArticleHtml } from '@/lib/article-content'
 import { type ArticleCheckpoint, getCheckpointIdsInOrder, getCheckpointLabel, getCheckpointMarkerHtml } from '@/lib/article-checkpoints'
 import { getArticleSectionTitles } from '@/lib/article-sections'
 import { type AdminLesson } from './admin-data'
@@ -55,9 +55,9 @@ const initialArticleHtml = (lesson: AdminLesson) => {
   if (lesson.articleBlocks?.length) return lesson.articleBlocks.map((block) => {
     if (block.type === 'image') return block.imageUrl ? `<figure><img src="${escapeHtml(block.imageUrl)}" alt="${escapeHtml(block.caption || 'Article image')}"/><figcaption>${escapeHtml(block.caption)}</figcaption></figure><p><br></p>` : ''
     if (block.type === 'heading') return `<h2>${escapeHtml(block.text)}</h2>`
-    return `<p>${escapeHtml(block.text).replace(/\n/g, '<br>')}</p>`
+    return textToArticleHtml(block.text)
   }).join('')
-  return (lesson.articleBody ?? '').split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('') || '<p><br></p>'
+  return textToArticleHtml(lesson.articleBody ?? '') || '<p><br></p>'
 }
 
 const syncCheckpoints = (articleBody: string, checkpoints: ArticleCheckpoint[] = []) => getCheckpointIdsInOrder(articleBody).flatMap((id) => {
@@ -355,7 +355,7 @@ const ArticleBlockEditor: FC<Props> = ({ lesson, onChange, readImage }) => {
           onKeyUp={saveSelection}
           onBlur={saveSelection}
           onPaste={(event) => {
-            const html = event.clipboardData.getData('text/html')
+            const html = event.clipboardData.getData('text/html') || textToArticleHtml(event.clipboardData.getData('text/plain'))
             if (!html) return
             event.preventDefault()
             insertHtml(html)
