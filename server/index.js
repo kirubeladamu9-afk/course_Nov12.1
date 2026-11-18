@@ -2819,6 +2819,12 @@ const getArticleSectionTitles = (articleBody) => {
   return titles.length ? titles : ['Full lesson']
 }
 
+const getArticleSectionCount = (lesson) => {
+  const sources = [lesson.articleBody, ...(Array.isArray(lesson.articleBlocks) ? lesson.articleBlocks.map((block) => block?.text) : [])]
+  const headingCount = Math.max(...sources.map((source) => (String(source ?? '').match(/<h2\b/gi) ?? []).length))
+  return Math.max(headingCount, 1)
+}
+
 const quizAnswerStatuses = new Set(['unanswered', 'answered', 'expired'])
 const isValidQuizAnswerValue = (value) => value === null || typeof value === 'string' || Number.isInteger(value) || (Array.isArray(value) && value.every((item) => typeof item === 'string'))
 const parseQuizAnswerRecord = (value) => {
@@ -3190,7 +3196,7 @@ app.post('/api/enrollments/:enrollmentId/lessons/:lessonId/article-help', requir
     if (!enrollment) return null
     const lesson = findCourseLesson(enrollment.modules, lessonId)
     if (!lesson || lesson.type !== 'article') return { error: 'Article lesson not found.' }
-    if (sectionIndex >= getArticleSectionTitles(lesson.articleBody).length) return { error: 'Section not found.' }
+    if (sectionIndex >= getArticleSectionCount(lesson)) return { error: 'Section not found.' }
     if ((lesson.articleHelpDisabledSections ?? []).includes(sectionIndex)) return { error: 'Help requests are not enabled for this section.' }
 
     const [helpRequest] = await transaction`
