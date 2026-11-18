@@ -2816,7 +2816,7 @@ const decodeHtmlText = (value) => value
 const getArticleSectionTitles = (articleBody) => {
   const titles = [...String(articleBody ?? '').matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi)]
     .map(([, inner]) => decodeHtmlText(inner.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim() || 'Untitled section')
-  return titles
+  return titles.length ? titles : ['Full lesson']
 }
 
 const quizAnswerStatuses = new Set(['unanswered', 'answered', 'expired'])

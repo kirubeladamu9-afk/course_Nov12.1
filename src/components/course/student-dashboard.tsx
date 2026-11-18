@@ -1992,7 +1992,7 @@ const ArticleLessonContent: FC<{ children?: ReactNode; startInFullScreen?: boole
   }
   const readAloudStatusLabel = readAloud.status === 'playing' ? 'Reading aloud' : readAloud.status === 'paused' ? 'Reading paused' : ''
   const isLegacyRichText = !blocks?.length && /<[^>]+>/.test(description)
-  const interactionsEnabled = interactive && isLegacyRichText
+  const interactionsEnabled = interactive
   const totalPages = Math.max(pages.length, 1)
   const pageBlocks = pages[page] ?? [{ type: 'text' as const, text: description }]
   const pageSections = useMemo(() => {
@@ -2122,7 +2122,7 @@ const ArticleLessonContent: FC<{ children?: ReactNode; startInFullScreen?: boole
       </Box>
       <IconButton size="small" aria-label="Close word meaning" onClick={() => setWordLookup(null)}><CloseIcon fontSize="small" /></IconButton>
     </Paper>}
-    {interactionsEnabled && interactionState && sectionTitles[currentSection] && !helpDisabledSections?.includes(currentSection) && <ArticleSectionHelp key={currentSection} sectionTitle={sectionTitles[currentSection] ?? 'this section'} helpRequest={interactionState.helpRequests.find((item) => item.sectionIndex === currentSection)} saving={savingInteraction} onFlag={() => saveSectionHelp(currentSection)} onAskQuestion={(question) => saveSectionHelp(currentSection, question)} />}
+    {interactionsEnabled && interactionState && !helpDisabledSections?.includes(currentSection) && <ArticleSectionHelp key={currentSection} sectionTitle={sectionTitles[currentSection] ?? 'Full lesson'} helpRequest={interactionState.helpRequests.find((item) => item.sectionIndex === currentSection)} saving={savingInteraction} onFlag={() => saveSectionHelp(currentSection)} onAskQuestion={(question) => saveSectionHelp(currentSection, question)} />}
     <Box ref={readingPaneRef} role="region" aria-label="Article text" tabIndex={0} onMouseUp={(event) => openWordMeaning({ x: event.clientX, y: event.clientY })} onKeyUp={(event) => { if (event.key === 'Shift' || event.key === 'Enter') openWordMeaning() }} sx={{ maxHeight: immersive ? 'none' : { xs: 440, md: 'min(68vh, 700px)' }, minHeight: 220, overflowY: 'auto', overflowX: 'hidden', pr: 2.5, scrollBehavior: 'smooth' }}>
       {isLegacyRichText ? <Box sx={[articleProseSx, immersive && { '& p': { textAlign: 'justify' } }]}>{renderLegacyFragments()}</Box> : <Box sx={[articleProseSx, immersive && { '& p': { textAlign: 'justify' } }]}>{pageBlocks.map((block, index) => {
         if (block.type === 'heading') return <Typography key={`heading-${index}`} variant="h5" component="h2" sx={{ mt: index === 0 ? 0 : 4.5, mb: 2, fontWeight: 800, letterSpacing: '-0.02em' }}>{block.text}</Typography>
