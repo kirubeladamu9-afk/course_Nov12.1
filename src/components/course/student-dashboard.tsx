@@ -2093,7 +2093,7 @@ const ArticleLessonContent: FC<{ description: string; blocks?: ArticleContentBlo
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [immersive])
   return <Box sx={immersive ? { position: 'fixed', inset: 0, zIndex: 'modal', overflowY: 'auto', bgcolor: 'background.default', p: { xs: 2, md: 4 } } : undefined}>
-    <Box sx={immersive ? { maxWidth: 760, mx: 'auto', pt: { xs: 5, md: 6 } } : undefined}>
+    <Box sx={immersive ? { maxWidth: 1000, mx: 'auto', pt: { xs: 5, md: 6 } } : undefined}>
     <Box sx={{ mb: 3 }}><Typography variant="body1" color="text.secondary" sx={{ fontWeight: 700, mb: 1 }}>Page {page + 1} of {totalPages}</Typography><LinearProgress variant="determinate" value={((page + 1) / totalPages) * 100} aria-label={`Article progress: page ${page + 1} of ${totalPages}`} sx={{ height: 12, borderRadius: 6, backgroundColor: 'action.hover', '& .MuiLinearProgress-bar': { borderRadius: 6 } }} /></Box>
     <Button variant="outlined" size="small" aria-pressed={immersive} startIcon={immersive ? <FullscreenExitOutlinedIcon /> : <FullscreenOutlinedIcon />} onClick={() => setImmersive((current) => !current)} sx={immersive ? { position: 'absolute', top: { xs: 16, md: 32 }, right: { xs: 16, md: 32 }, zIndex: 1 } : { alignSelf: 'flex-start', mb: 3 }}>{immersive ? 'Exit full screen' : 'Full screen'}</Button>
     {(readAloud.supported || vocabularyByWord.size > 0) && <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} spacing={1.5} sx={{ mb: 3, flexWrap: 'wrap' }}>
