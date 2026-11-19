@@ -50,8 +50,12 @@ describe('classifyEvidence', () => {
     expect(classifyEvidence({ correct: 4, incorrect: 1 })).toBe('strong')
   })
 
-  it('gives strong precedence when accuracy is at least 80 percent even with two misses', () => {
-    expect(classifyEvidence({ correct: 8, incorrect: 2 })).toBe('strong')
+  it('gives needs practice precedence when two misses appear even at 80 percent accuracy', () => {
+    expect(classifyEvidence({ correct: 8, incorrect: 2 })).toBe('needs_practice')
+  })
+
+  it('keeps a single miss at high accuracy as strong', () => {
+    expect(classifyEvidence({ correct: 9, incorrect: 1 })).toBe('strong')
   })
 })
 

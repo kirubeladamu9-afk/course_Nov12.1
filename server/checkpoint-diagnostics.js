@@ -17,8 +17,8 @@ const emptyLevelCounts = () => Object.fromEntries(DIAGNOSTIC_LEVELS.map((level) 
 export const classifyEvidence = ({ correct = 0, incorrect = 0 }) => {
   const answered = correct + incorrect
   if (answered < DIAGNOSTIC_THRESHOLDS.minAnswered) return 'not_proven'
-  if (correct * 100 >= answered * DIAGNOSTIC_THRESHOLDS.strongAccuracyPercent) return 'strong'
   if (incorrect >= DIAGNOSTIC_THRESHOLDS.needsPracticeIncorrect) return 'needs_practice'
+  if (correct * 100 >= answered * DIAGNOSTIC_THRESHOLDS.strongAccuracyPercent) return 'strong'
   return 'not_proven'
 }
 

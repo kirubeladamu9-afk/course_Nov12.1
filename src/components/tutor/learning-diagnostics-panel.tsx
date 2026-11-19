@@ -23,6 +23,8 @@ const levelColor: Record<EvidenceLevel, 'success' | 'warning' | 'default'> = { s
 
 const LevelChip: FC<{ level: EvidenceLevel }> = ({ level }) => <Chip size="small" color={levelColor[level]} variant={level === 'not_proven' ? 'outlined' : 'filled'} label={EVIDENCE_LABELS[level]} />
 
+const accuracyText = ({ correct, answered }: { correct: number; answered: number }) => answered ? `${Math.round((correct * 100) / answered)}%` : '—'
+
 const OutcomeCells: FC<{ totals: LearningOutcomeTotals }> = ({ totals }) => <>
   <TableCell sx={{ color: 'success.main', fontWeight: 600 }}>{totals.correct}</TableCell>
   <TableCell sx={{ color: totals.incorrect ? 'error.main' : 'text.primary', fontWeight: totals.incorrect ? 600 : 400 }}>{totals.incorrect}</TableCell>
@@ -77,9 +79,9 @@ const StudentEvidence: FC<{ report: TutorLearningDiagnostics }> = ({ report }) =
         {student.needsSupport && <Chip size="small" color="warning" label="Needs practice" />}
       </Stack>
       <Box sx={{ overflowX: 'auto' }}>
-        <Table size="small" sx={{ minWidth: 520 }}>
+        <Table size="small" sx={{ minWidth: 600 }}>
           <TableHead>
-            <TableRow>{['Topic', 'Level', 'Answered', 'Correct', 'Incorrect', 'Skipped'].map(headingCell)}</TableRow>
+            <TableRow>{['Topic', 'Level', 'Answered', 'Accuracy', 'Correct', 'Incorrect', 'Skipped'].map(headingCell)}</TableRow>
           </TableHead>
           <TableBody>
             {student.topics.flatMap((topic) => [
@@ -87,12 +89,14 @@ const StudentEvidence: FC<{ report: TutorLearningDiagnostics }> = ({ report }) =
                 <TableCell sx={{ fontWeight: 600 }}>{topic.title}</TableCell>
                 <TableCell><LevelChip level={topic.level} /></TableCell>
                 <TableCell>{topic.answered}</TableCell>
+                <TableCell>{accuracyText(topic)}</TableCell>
                 <OutcomeCells totals={topic} />
               </TableRow>,
               ...topic.subtopics.map((subtopic) => <TableRow key={`${topic.topicId}-${subtopic.key}`}>
                 <TableCell sx={{ pl: 4, color: 'text.secondary' }}>{subtopic.title}</TableCell>
                 <TableCell><LevelChip level={subtopic.level} /></TableCell>
                 <TableCell>{subtopic.answered}</TableCell>
+                <TableCell>{accuracyText(subtopic)}</TableCell>
                 <OutcomeCells totals={subtopic} />
               </TableRow>),
             ])}
@@ -131,7 +135,7 @@ const LearningDiagnosticsPanel: FC<{ target: Target }> = ({ target }) => {
 
       {report && report.checkpointCount > 0 && <Stack spacing={2.5}>
         <Typography variant="body2" color="text.secondary">
-          Needs Practice: at least 3 answered, with 2 or more incorrect. Strong: at least 3 answered with 80% or more correct. Skipped answers are counted separately and never as incorrect.
+          Needs Practice: at least 3 answered with 2 or more incorrect, checked first. Strong: at least 3 answered with 80% or more correct. Fewer than 3 answered is Not Yet Proven. Skipped answers are counted separately and never as incorrect.
         </Typography>
         <Box>
           <Chip size="small" color={report.studentsNeedingSupport > 0 ? 'warning' : 'success'} variant={report.studentsNeedingSupport > 0 ? 'filled' : 'outlined'} label={`${report.studentsNeedingSupport} ${report.studentsNeedingSupport === 1 ? 'student needs' : 'students need'} practice`} />

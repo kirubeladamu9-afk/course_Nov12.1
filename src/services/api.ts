@@ -823,6 +823,7 @@ export interface LearningSubtopic {
   id: number
   topicId: number
   title: string
+  archived: boolean
 }
 
 export interface LearningTopic {
@@ -852,6 +853,17 @@ export const createLearningSubtopic = async (topicId: number, title: string): Pr
   const response = await requestApi(`/api/learning-topics/${topicId}/subtopics`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) })
   if (!response.ok) throw new Error(await getErrorMessage(response))
   return response.json()
+}
+
+export const updateLearningSubtopic = async (subtopicId: number, update: { title?: string; archived?: boolean }): Promise<LearningSubtopic> => {
+  const response = await requestApi(`/api/learning-subtopics/${subtopicId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) })
+  if (!response.ok) throw new Error(await getErrorMessage(response))
+  return response.json()
+}
+
+export const deleteLearningSubtopic = async (subtopicId: number): Promise<void> => {
+  const response = await requestApi(`/api/learning-subtopics/${subtopicId}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error(await getErrorMessage(response))
 }
 
 export type LearningLevel = EvidenceLevel

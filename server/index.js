@@ -911,6 +911,7 @@ const initializeDatabase = async () => {
     )
   `
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_subtopics_topic_title_idx ON learning_subtopics (topic_id, LOWER(title))`
+  await sql`ALTER TABLE learning_subtopics ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`
 
   await sql`
     CREATE TABLE IF NOT EXISTS gamification_activity_rewards (
@@ -2875,7 +2876,7 @@ const getAvailableLearningTopics = async (scope) => {
     ORDER BY syllabus_topics.position NULLS LAST, learning_topics.id
   `
   const subtopics = topics.length ? await sql`
-    SELECT id::INTEGER AS id, topic_id::INTEGER AS "topicId", title
+    SELECT id::INTEGER AS id, topic_id::INTEGER AS "topicId", title, archived_at IS NOT NULL AS archived
     FROM learning_subtopics
     WHERE topic_id = ANY(${topics.map((topic) => topic.id)})
     ORDER BY LOWER(title), id
@@ -6734,13 +6735,59 @@ app.post('/api/learning-topics/:id/subtopics', requireAdminOrTutor, async (reque
     const [created] = await sql`
       INSERT INTO learning_subtopics (topic_id, title)
       VALUES (${topicId}, ${title})
-      RETURNING id::INTEGER AS id, topic_id::INTEGER AS "topicId", title
+      RETURNING id::INTEGER AS id, topic_id::INTEGER AS "topicId", title, archived_at IS NOT NULL AS archived
     `
     return response.status(201).json(created)
   } catch (error) {
     if (error.code === '23505') return response.status(409).json({ message: 'This topic already has a subtopic with this name.' })
     throw error
   }
+})
+
+const isSubtopicInUse = async (subtopicId) => {
+  const courseRows = await sql`SELECT modules FROM courses`
+  const classRows = await sql`SELECT modules FROM classes`
+  return [...courseRows, ...classRows].some((row) => getTaggedCheckpoints(getCourseLessons(deserializeJson(row.modules) ?? []))
+    .some((checkpoint) => checkpoint.subtopicId === subtopicId))
+}
+
+app.patch('/api/learning-subtopics/:id', requireAdmin, async (request, response) => {
+  const id = parseCourseId(request.params.id)
+  const hasTitle = request.body?.title !== undefined
+  const hasArchived = request.body?.archived !== undefined
+  const title = hasTitle ? parseLearningLabel(request.body.title) : undefined
+  if (id === null || (!hasTitle && !hasArchived)) return response.status(400).json({ message: 'Invalid subtopic update.' })
+  if (hasTitle && !title) return response.status(400).json({ message: 'Enter a subtopic name of 100 characters or fewer.' })
+  if (hasArchived && typeof request.body.archived !== 'boolean') return response.status(400).json({ message: 'Invalid subtopic update.' })
+
+  const update = {}
+  if (hasTitle) update.title = title
+  if (hasArchived) update.archived_at = request.body.archived ? new Date() : null
+  try {
+    const [updated] = await sql`
+      UPDATE learning_subtopics
+      SET ${sql(update)}
+      WHERE id = ${id}
+      RETURNING id::INTEGER AS id, topic_id::INTEGER AS "topicId", title, archived_at IS NOT NULL AS archived
+    `
+    if (!updated) return response.status(404).json({ message: 'Subtopic not found.' })
+    return response.json(updated)
+  } catch (error) {
+    if (error.code === '23505') return response.status(409).json({ message: 'This topic already has a subtopic with this name.' })
+    throw error
+  }
+})
+
+app.delete('/api/learning-subtopics/:id', requireAdmin, async (request, response) => {
+  const id = parseCourseId(request.params.id)
+  if (id === null) return response.status(400).json({ message: 'Invalid subtopic id.' })
+
+  const [subtopic] = await sql`SELECT id FROM learning_subtopics WHERE id = ${id}`
+  if (!subtopic) return response.status(404).json({ message: 'Subtopic not found.' })
+  if (await isSubtopicInUse(id)) return response.status(409).json({ message: 'Pause & Check questions use this subtopic, so it cannot be deleted. Archive it instead.' })
+
+  await sql`DELETE FROM learning_subtopics WHERE id = ${id}`
+  return response.status(204).end()
 })
 
 const classPrograms = ['international-online-interactive', 'summer-camp', 'ministry-exam-prep', 'other']

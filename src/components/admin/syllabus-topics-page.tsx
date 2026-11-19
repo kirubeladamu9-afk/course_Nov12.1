@@ -22,6 +22,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import { useEffect, useState } from 'react'
 import { toast } from '@/components/toast'
+import SyllabusSubtopicsDialog from './syllabus-subtopics-dialog'
 import {
   createAdminSyllabusTopic,
   deleteAdminSyllabusTopic,
@@ -53,6 +54,7 @@ const SyllabusTopicsPage = () => {
   const [deleteTarget, setDeleteTarget] = useState<SyllabusTopic | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isReordering, setIsReordering] = useState(false)
+  const [subtopicTopic, setSubtopicTopic] = useState<SyllabusTopic | null>(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
 
@@ -188,6 +190,7 @@ const SyllabusTopicsPage = () => {
           <Stack direction="row" spacing={0.5}>
             <Tooltip title="Move up"><span><IconButton aria-label={`Move ${topic.title} up`} disabled={!canReorder || gradeTopics.indexOf(topic) === 0 || isReordering} onClick={() => void moveTopic(topic, -1)}><ArrowUpwardIcon fontSize="small" /></IconButton></span></Tooltip>
             <Tooltip title="Move down"><span><IconButton aria-label={`Move ${topic.title} down`} disabled={!canReorder || gradeTopics.indexOf(topic) === gradeTopics.length - 1 || isReordering} onClick={() => void moveTopic(topic, 1)}><ArrowDownwardIcon fontSize="small" /></IconButton></span></Tooltip>
+            <Button size="small" aria-label={`Manage subtopics for ${topic.title}`} onClick={() => setSubtopicTopic(topic)}>Subtopics</Button>
             <Tooltip title="Edit topic"><IconButton aria-label={`Edit ${topic.title}`} onClick={() => openEdit(topic)}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
             <Tooltip title="Delete topic"><IconButton aria-label={`Delete ${topic.title}`} color="error" onClick={() => setDeleteTarget(topic)}><DeleteOutlineIcon fontSize="small" /></IconButton></Tooltip>
           </Stack>
@@ -199,6 +202,8 @@ const SyllabusTopicsPage = () => {
           <Pagination count={pageCount} page={currentPage} onChange={(_, nextPage) => setPage(nextPage)} color="primary" />
         </Stack>
       )}
+
+      {subtopicTopic && <SyllabusSubtopicsDialog topic={subtopicTopic} grade={grade} onClose={() => setSubtopicTopic(null)} />}
 
       <Dialog open={editor !== null} onClose={() => !isSaving && setEditor(null)} fullWidth maxWidth="sm">
         <DialogTitle>{editor?.mode === 'edit' ? 'Edit topic' : `Add Grade ${grade} topic`}</DialogTitle>

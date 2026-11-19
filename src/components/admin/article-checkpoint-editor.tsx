@@ -104,7 +104,7 @@ const TopicTagFields: FC<{ draft: ArticleCheckpoint; onChange: (patch: Partial<A
     {draft.topicId !== null && draft.topicId !== undefined && <>
       <TextField select fullWidth size="small" label="Subtopic" value={draft.subtopicId ?? ''} onChange={(event) => onChange({ subtopicId: event.target.value === '' ? null : Number(event.target.value), customSubtopic: '' })}>
         <MenuItem value="">No listed subtopic</MenuItem>
-        {(selectedTopic?.subtopics ?? []).map((subtopic) => <MenuItem key={subtopic.id} value={subtopic.id}>{subtopic.title}</MenuItem>)}
+        {(selectedTopic?.subtopics ?? []).filter((subtopic) => !subtopic.archived || subtopic.id === draft.subtopicId).map((subtopic) => <MenuItem key={subtopic.id} value={subtopic.id}>{subtopic.archived ? `${subtopic.title} (archived)` : subtopic.title}</MenuItem>)}
       </TextField>
       <TextField fullWidth size="small" label="Custom subtopic (optional)" value={hasListedSubtopic ? '' : draft.customSubtopic ?? ''} disabled={hasListedSubtopic} onChange={(event) => onChange({ customSubtopic: event.target.value })} inputProps={{ maxLength: MAX_LABEL_LENGTH }} helperText="Only when no listed subtopic fits." />
       <Stack direction="row" spacing={1} alignItems="center">
