@@ -1003,10 +1003,10 @@ const EnrolledCourseCard: FC<{ enrollment: DashboardEnrollment; course: Dashboar
       <Box sx={{ position: 'relative', aspectRatio: '16 / 9', overflow: 'hidden', background: (theme) => `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.22)}, ${alpha(theme.palette.info.main, 0.14)})` }}>
         {course.cover ? <Box component="img" src={course.cover} alt={`${course.title} thumbnail`} sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} /> : <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'primary.main' }}><MenuBookOutlinedIcon sx={{ fontSize: 46, opacity: 0.8 }} /></Box>}
       </Box>
-      <CardContent sx={{ p: 1.75, display: 'flex', flex: 1, flexDirection: 'column', '&:last-child': { pb: 1.75 } }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 0.9 }}>
-          <Chip label={course.category} size="small" sx={{ height: 23, borderRadius: 1.5, fontSize: 11, fontWeight: 800, color: 'primary.dark', backgroundColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.09) }} />
-          <Chip size="small" label={grade.letter} color={grade.letter === 'F' ? 'error' : grade.letter === 'D' ? 'warning' : 'success'} sx={{ height: 23, fontWeight: 800 }} />
+      <CardContent sx={{ p: 1.75, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, '&:last-child': { pb: 1.75 } }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 0.9, minWidth: 0 }}>
+          <Chip label={course.category} size="small" sx={{ minWidth: 0, maxWidth: '100%', height: 23, borderRadius: 1.5, fontSize: 11, fontWeight: 800, color: 'primary.dark', backgroundColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.09) }} />
+          <Chip size="small" label={grade.letter} color={grade.letter === 'F' ? 'error' : grade.letter === 'D' ? 'warning' : 'success'} sx={{ flexShrink: 0, height: 23, fontWeight: 800 }} />
         </Stack>
         <Typography variant="subtitle1" sx={{ minHeight: 48, mb: 0.5, fontWeight: 800, lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{course.title}</Typography>
         <Typography variant="caption" color="text.secondary" sx={{ mb: 1.2 }}>Instructor: {course.tutor}</Typography>
