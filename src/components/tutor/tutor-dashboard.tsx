@@ -46,6 +46,7 @@ import AtRiskStudentsPanel from '@/components/at-risk-students-panel'
 import { TutorGradingView } from '@/components/tutor/tutor-grading-view'
 import SyllabusCoveragePanel from '@/components/tutor/syllabus-coverage-panel'
 import ArticleInteractionReport from '@/components/tutor/article-interaction-report'
+import LearningDiagnosticsPanel from '@/components/tutor/learning-diagnostics-panel'
 import { type AdminCourse, type AdminModule } from '@/components/admin/admin-data'
 import { navigateTo } from '@/lib/navigation'
 import { SITE_NAME } from '@/lib/site'
@@ -157,6 +158,7 @@ const StudentProgressView = ({ target, students, studentsLoading, classRanks, on
     <Typography variant="h4" sx={{ mb: 0.5 }}>{target.title}</Typography>
     <Typography color="text.secondary" sx={{ mb: 3 }}>Student progress</Typography>
     <ArticleInteractionReport target={target} />
+    <LearningDiagnosticsPanel target={target} />
     {target.type === 'class' && typeof target.syllabusGrade === 'number' && !studentsLoading && <SyllabusCoveragePanel grade={target.syllabusGrade} modules={target.modules} students={students} />}
     <Stack spacing={2}>
       {studentsLoading && <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={20} aria-label="Loading enrolled students" /><Typography color="text.secondary">Loading enrolled students...</Typography></Stack>}

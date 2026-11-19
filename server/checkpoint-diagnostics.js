@@ -1,4 +1,4 @@
-export const DIAGNOSTIC_LEVELS = ['strong', 'developing', 'needs_practice', 'not_proven']
+export const DIAGNOSTIC_LEVELS = ['strong', 'needs_practice', 'not_proven']
 
 export const DIAGNOSTIC_THRESHOLDS = {
   minAnswered: 3,
@@ -19,11 +19,11 @@ export const classifyEvidence = ({ correct = 0, incorrect = 0 }) => {
   if (answered < DIAGNOSTIC_THRESHOLDS.minAnswered) return 'not_proven'
   if (correct * 100 >= answered * DIAGNOSTIC_THRESHOLDS.strongAccuracyPercent) return 'strong'
   if (incorrect >= DIAGNOSTIC_THRESHOLDS.needsPracticeIncorrect) return 'needs_practice'
-  return 'developing'
+  return 'not_proven'
 }
 
 const isMisunderstood = (levelCounts) => {
-  const classified = levelCounts.strong + levelCounts.developing + levelCounts.needs_practice
+  const classified = levelCounts.strong + levelCounts.needs_practice
   return classified >= DIAGNOSTIC_THRESHOLDS.misunderstoodMinLearners
     && levelCounts.needs_practice * 100 >= classified * DIAGNOSTIC_THRESHOLDS.misunderstoodSharePercent
 }

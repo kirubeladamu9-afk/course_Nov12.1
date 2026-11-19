@@ -18,6 +18,14 @@ export const MASTERY_LABELS: Record<MasteryLevel, string> = {
   not_started: 'Not Started',
 }
 
+export type EvidenceLevel = 'strong' | 'needs_practice' | 'not_proven'
+
+export const EVIDENCE_LABELS: Record<EvidenceLevel, string> = {
+  strong: 'Strong',
+  needs_practice: MASTERY_LABELS.shaky,
+  not_proven: MASTERY_LABELS.unverified,
+}
+
 const attemptTime = (attempt: MasteryAttempt) => Date.parse(attempt.submittedAt ?? attempt.startedAt)
 
 export const getLessonMastery = ({ completed, quizAttempts }: { completed: boolean; quizAttempts: MasteryAttempt[] }): MasteryLevel => {

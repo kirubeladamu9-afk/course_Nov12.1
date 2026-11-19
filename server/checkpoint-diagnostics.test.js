@@ -38,7 +38,7 @@ describe('classifyEvidence', () => {
 
   it('does not treat a single incorrect answer as weak evidence', () => {
     expect(classifyEvidence({ correct: 1, incorrect: 1 })).toBe('not_proven')
-    expect(classifyEvidence({ correct: 2, incorrect: 1 })).toBe('developing')
+    expect(classifyEvidence({ correct: 2, incorrect: 1 })).toBe('not_proven')
   })
 
   it('classifies three answers with two incorrect as needing practice', () => {
@@ -50,8 +50,8 @@ describe('classifyEvidence', () => {
     expect(classifyEvidence({ correct: 4, incorrect: 1 })).toBe('strong')
   })
 
-  it('keeps developing when accuracy is below 80 percent and fewer than two answers are incorrect', () => {
-    expect(classifyEvidence({ correct: 2, incorrect: 1 })).toBe('developing')
+  it('gives strong precedence when accuracy is at least 80 percent even with two misses', () => {
+    expect(classifyEvidence({ correct: 8, incorrect: 2 })).toBe('strong')
   })
 })
 
@@ -70,7 +70,7 @@ describe('buildDiagnosticReport', () => {
   it('does not count unanswered checkpoints, which have no records', () => {
     const report = buildDiagnosticReport({ topics, records: [], enrollmentIds: [1, 2] })
 
-    expect(report.topics[0].levels).toEqual({ strong: 0, developing: 0, needs_practice: 0, not_proven: 2 })
+    expect(report.topics[0].levels).toEqual({ strong: 0, needs_practice: 0, not_proven: 2 })
     expect(report.students.every((student) => student.topics.length === 0)).toBe(true)
   })
 
@@ -94,7 +94,7 @@ describe('buildDiagnosticReport', () => {
     ]
     const report = buildDiagnosticReport({ topics, records, enrollmentIds: [1, 2, 3] })
 
-    expect(report.topics[0].levels).toEqual({ strong: 1, developing: 0, needs_practice: 2, not_proven: 0 })
+    expect(report.topics[0].levels).toEqual({ strong: 1, needs_practice: 2, not_proven: 0 })
     expect(report.topics[0].misunderstood).toBe(true)
   })
 
@@ -113,7 +113,7 @@ describe('buildDiagnosticReport', () => {
     ]
     const report = buildDiagnosticReport({ topics, records, enrollmentIds: [1] })
 
-    expect(report.topics[0].subtopics[0].levels).toEqual({ strong: 0, developing: 0, needs_practice: 0, not_proven: 1 })
+    expect(report.topics[0].subtopics[0].levels).toEqual({ strong: 0, needs_practice: 0, not_proven: 1 })
     expect(report.topics[0].subtopics[0].totals).toEqual({ correct: 0, incorrect: 2, skipped: 0 })
     expect(report.students[0].topics[0].subtopics[0]).toMatchObject({ key: 'subtopic:5', incorrect: 2, answered: 2 })
     expect(report.students[0].topics[0]).toMatchObject({ answered: 3, incorrect: 2 })

@@ -3,6 +3,7 @@ import { type Course } from '@/interfaces/course'
 import { type ArticleContentBlock, type ArticleVocabularyEntry, type SimulationConfig, type StepByStepSolverLearnerConfig, type StepByStepSolverSession, type StepByStepSolverState } from '@/components/admin/admin-data'
 import { type PracticeExam, type PracticeExamWithQuestions, type PracticePurchase, type PracticeQuestion } from '@/components/practice/practice-data'
 import { type LearnerArticleCheckpoint } from '@/lib/article-checkpoints'
+import { type EvidenceLevel } from '@/components/course/study-mastery'
 import { navigateTo } from '@/lib/navigation'
 import { readClientHints } from '@/lib/client-hints'
 
@@ -853,7 +854,7 @@ export const createLearningSubtopic = async (topicId: number, title: string): Pr
   return response.json()
 }
 
-export type LearningLevel = 'strong' | 'developing' | 'needs_practice' | 'not_proven'
+export type LearningLevel = EvidenceLevel
 
 export interface LearningOutcomeTotals {
   correct: number
