@@ -9,6 +9,7 @@ import helmet from 'helmet'
 import postgres from 'postgres'
 import { getChangedCourseLessonIds, remapReusedCourseLessonIds } from './course-lesson-identities.js'
 import { buildClientMetadata, displayClientIp, parseNickname, sanitizeClientHints } from './client-metadata.js'
+import { buildDiagnosticReport, resolveCheckpointSubtopic } from './checkpoint-diagnostics.js'
 import { getLatestSubmittedQuizAttempts } from './quiz-performance.js'
 import { areSolverFollowUpsComplete, areSolverProblemsComplete, getStepByStepSolverSessionView, isValidStepByStepSolverConfig, normalizeSolverAnswer } from './step-by-step-solver-engine.js'
 import { expireQuizAnswers, getQuizDeadline, getQuizTimeLimitSeconds, hasScheduledClassQuizzes, isQuizExpired } from './quiz-timing.js'
@@ -784,6 +785,9 @@ const initializeDatabase = async () => {
       CHECK ((skipped AND selected_option IS NULL AND is_correct IS NULL) OR (NOT skipped AND selected_option IS NOT NULL AND is_correct IS NOT NULL))
     )
   `
+  await ensureColumns('article_checkpoint_responses', {
+    attempt_number: 'INTEGER NOT NULL DEFAULT 1 CHECK (attempt_number >= 1)',
+  })
   await sql`
     CREATE TABLE IF NOT EXISTS step_by_step_solver_sessions (
       id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -883,6 +887,30 @@ const initializeDatabase = async () => {
   `
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS syllabus_topics_grade_title_idx ON syllabus_topics (grade, LOWER(title))`
   await sql`CREATE INDEX IF NOT EXISTS syllabus_topics_grade_position_idx ON syllabus_topics (grade, position)`
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS learning_topics (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      course_id BIGINT REFERENCES courses(id) ON DELETE CASCADE,
+      class_id BIGINT REFERENCES classes(id) ON DELETE CASCADE,
+      syllabus_topic_id BIGINT REFERENCES syllabus_topics(id) ON DELETE CASCADE,
+      title TEXT NOT NULL CHECK (char_length(title) BETWEEN 1 AND 200),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (num_nonnulls(course_id, class_id, syllabus_topic_id) = 1)
+    )
+  `
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_topics_syllabus_topic_idx ON learning_topics (syllabus_topic_id) WHERE syllabus_topic_id IS NOT NULL`
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_topics_course_title_idx ON learning_topics (course_id, LOWER(title)) WHERE course_id IS NOT NULL`
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_topics_class_title_idx ON learning_topics (class_id, LOWER(title)) WHERE class_id IS NOT NULL`
+  await sql`
+    CREATE TABLE IF NOT EXISTS learning_subtopics (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      topic_id BIGINT NOT NULL REFERENCES learning_topics(id) ON DELETE CASCADE,
+      title TEXT NOT NULL CHECK (char_length(title) BETWEEN 1 AND 200),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_subtopics_topic_title_idx ON learning_subtopics (topic_id, LOWER(title))`
 
   await sql`
     CREATE TABLE IF NOT EXISTS gamification_activity_rewards (
@@ -2805,6 +2833,155 @@ const toCheckpointResponse = (row, checkpoint) => ({
   answeredAt: row.answeredAt,
 })
 
+const customSubtopicLabel = (checkpoint) => typeof checkpoint.customSubtopic === 'string' ? checkpoint.customSubtopic.trim() : ''
+const hasCheckpointTopicTag = (checkpoint) => checkpoint.topicId != null || checkpoint.subtopicId != null || customSubtopicLabel(checkpoint) !== ''
+
+const getTaggedCheckpoints = (lessons) => lessons
+  .filter((lesson) => lesson?.type === 'article')
+  .flatMap((lesson) => getArticleCheckpoints(lesson)
+    .filter((checkpoint) => Number.isInteger(checkpoint.topicId))
+    .map((checkpoint) => ({
+      lessonId: Number(lesson.id),
+      checkpointId: Number(checkpoint.id),
+      topicId: checkpoint.topicId,
+      subtopicId: Number.isInteger(checkpoint.subtopicId) ? checkpoint.subtopicId : null,
+      customSubtopic: checkpoint.customSubtopic,
+    })))
+
+const getLearningTopicScopeCondition = (scope) => {
+  const conditions = [
+    scope.courseId ? sql`learning_topics.course_id = ${scope.courseId}` : null,
+    scope.classId ? sql`learning_topics.class_id = ${scope.classId}` : null,
+    scope.syllabusGrade ? sql`learning_topics.syllabus_topic_id IN (SELECT id FROM syllabus_topics WHERE grade = ${scope.syllabusGrade})` : null,
+  ].filter(Boolean)
+  return conditions.length ? conditions.reduce((combined, condition) => sql`${combined} OR ${condition}`) : sql`FALSE`
+}
+
+const ensureSyllabusLearningTopics = (grade) => sql`
+  INSERT INTO learning_topics (syllabus_topic_id, title)
+  SELECT id, title FROM syllabus_topics WHERE grade = ${grade}
+  ON CONFLICT (syllabus_topic_id) WHERE syllabus_topic_id IS NOT NULL DO NOTHING
+`
+
+const getAvailableLearningTopics = async (scope) => {
+  if (scope.syllabusGrade) await ensureSyllabusLearningTopics(scope.syllabusGrade)
+  const topics = await sql`
+    SELECT learning_topics.id::INTEGER AS id,
+           learning_topics.syllabus_topic_id::INTEGER AS "syllabusTopicId",
+           COALESCE(syllabus_topics.title, learning_topics.title) AS title
+    FROM learning_topics
+    LEFT JOIN syllabus_topics ON syllabus_topics.id = learning_topics.syllabus_topic_id
+    WHERE ${getLearningTopicScopeCondition(scope)}
+    ORDER BY syllabus_topics.position NULLS LAST, learning_topics.id
+  `
+  const subtopics = topics.length ? await sql`
+    SELECT id::INTEGER AS id, topic_id::INTEGER AS "topicId", title
+    FROM learning_subtopics
+    WHERE topic_id = ANY(${topics.map((topic) => topic.id)})
+    ORDER BY LOWER(title), id
+  ` : []
+  return topics.map((topic) => ({ ...topic, subtopics: subtopics.filter((subtopic) => subtopic.topicId === topic.id) }))
+}
+
+const loadLearningScope = async (request, { courseId = null, classId = null }) => {
+  const [tutor] = request.userRole === 'tutor'
+    ? await sql`
+      SELECT tutors.id
+      FROM tutors
+      INNER JOIN users ON LOWER(TRIM(users.email)) = LOWER(TRIM(tutors.email))
+      WHERE users.id = ${request.userId}
+    `
+    : [null]
+  if (request.userRole === 'tutor' && !tutor) return null
+  const tutorCondition = tutor ? sql`AND tutor_id = ${tutor.id}` : sql``
+  if (courseId !== null) {
+    const [course] = await sql`SELECT id::INTEGER AS id FROM courses WHERE id = ${courseId} ${tutorCondition}`
+    return course ? { courseId } : null
+  }
+  const [classRecord] = await sql`SELECT id::INTEGER AS id, program_id, grade_level FROM classes WHERE id = ${classId} ${tutorCondition}`
+  return classRecord ? { classId, syllabusGrade: classRecord.program_id === 'ministry-exam-prep' ? classRecord.grade_level : null } : null
+}
+
+const getLearningTopicTagError = async (modules, scope) => {
+  const checkpoints = getCourseLessons(deserializeJson(modules) ?? [])
+    .filter((lesson) => lesson?.type === 'article')
+    .flatMap((lesson) => Array.isArray(lesson.articleCheckpoints) ? lesson.articleCheckpoints : [])
+  if (checkpoints.some((checkpoint) => checkpoint.customSubtopic != null && typeof checkpoint.customSubtopic !== 'string')) return 'Enter a valid custom subtopic.'
+  const tagged = checkpoints.filter(hasCheckpointTopicTag)
+  if (tagged.length === 0) return null
+
+  const topics = await getAvailableLearningTopics(scope)
+  const subtopicIdsByTopic = new Map(topics.map((topic) => [topic.id, new Set(topic.subtopics.map((subtopic) => subtopic.id))]))
+  for (const checkpoint of tagged) {
+    if (!Number.isInteger(checkpoint.topicId) || !subtopicIdsByTopic.has(checkpoint.topicId)) return 'Choose a topic from this course or class for each Pause & Check question.'
+    if (checkpoint.subtopicId != null && !subtopicIdsByTopic.get(checkpoint.topicId).has(checkpoint.subtopicId)) return 'Choose a subtopic that belongs to the selected topic.'
+    if (checkpoint.subtopicId != null && customSubtopicLabel(checkpoint) !== '') return 'Choose either a listed subtopic or a custom subtopic, not both.'
+    if (customSubtopicLabel(checkpoint).length > 100) return 'Custom subtopic names must be 100 characters or fewer.'
+  }
+  return null
+}
+
+const getTutorLearningDiagnostics = async (contentType, contentId) => {
+  const [content] = contentType === 'class'
+    ? await sql`SELECT modules FROM classes WHERE id = ${contentId}`
+    : await sql`SELECT modules FROM courses WHERE id = ${contentId}`
+  const students = await getTutorContentStudents(contentType, contentId)
+  const enrollmentIds = students.map((student) => student.id)
+  const checkpointRows = enrollmentIds.length ? await sql`
+    SELECT enrollment_id AS "enrollmentId", lesson_id AS "lessonId", checkpoint_id AS "checkpointId", skipped, is_correct AS "isCorrect"
+    FROM article_checkpoint_responses
+    WHERE enrollment_id = ANY(${enrollmentIds})
+  ` : []
+
+  const taggedCheckpoints = getTaggedCheckpoints(getCourseLessons(deserializeJson(content?.modules) ?? []))
+  const subtopicIds = [...new Set(taggedCheckpoints.map((checkpoint) => checkpoint.subtopicId).filter((id) => id !== null))]
+  const subtopicRows = subtopicIds.length ? await sql`SELECT id::INTEGER AS id, title FROM learning_subtopics WHERE id = ANY(${subtopicIds})` : []
+  const registeredSubtopicTitles = new Map(subtopicRows.map((row) => [row.id, row.title]))
+  const tagsByCheckpoint = new Map(taggedCheckpoints.map((checkpoint) => [
+    `${checkpoint.lessonId}:${checkpoint.checkpointId}`,
+    { topicId: checkpoint.topicId, subtopic: resolveCheckpointSubtopic(checkpoint, registeredSubtopicTitles) },
+  ]))
+
+  const records = checkpointRows.flatMap((row) => {
+    const tag = tagsByCheckpoint.get(`${Number(row.lessonId)}:${Number(row.checkpointId)}`)
+    if (!tag) return []
+    return [{
+      enrollmentId: Number(row.enrollmentId),
+      evidenceKey: `checkpoint:${Number(row.lessonId)}:${Number(row.checkpointId)}`,
+      topicId: tag.topicId,
+      subtopicKey: tag.subtopic?.key ?? null,
+      outcome: row.skipped ? 'skipped' : row.isCorrect ? 'correct' : 'incorrect',
+    }]
+  })
+
+  const tags = [...tagsByCheckpoint.values()]
+  const topicIds = [...new Set(tags.map((tag) => tag.topicId))]
+  const topicRows = topicIds.length ? await sql`
+    SELECT learning_topics.id::INTEGER AS id, COALESCE(syllabus_topics.title, learning_topics.title) AS title
+    FROM learning_topics
+    LEFT JOIN syllabus_topics ON syllabus_topics.id = learning_topics.syllabus_topic_id
+    WHERE learning_topics.id = ANY(${topicIds})
+  ` : []
+  const topics = topicRows.map((topic) => {
+    const subtopics = new Map()
+    for (const tag of tags) if (tag.topicId === topic.id && tag.subtopic) subtopics.set(tag.subtopic.key, tag.subtopic)
+    return { id: topic.id, title: topic.title, subtopics: [...subtopics.values()] }
+  })
+
+  const report = buildDiagnosticReport({ topics, records, enrollmentIds })
+  const studentsById = new Map(students.map((student) => [student.id, student]))
+  return {
+    checkpointCount: tagsByCheckpoint.size,
+    studentsNeedingSupport: report.studentsNeedingSupport,
+    topics: report.topics,
+    students: report.students.map((student) => ({
+      ...student,
+      studentName: studentsById.get(student.enrollmentId)?.studentName ?? '',
+      studentEmail: studentsById.get(student.enrollmentId)?.studentEmail ?? '',
+    })),
+  }
+}
+
 const decodeHtmlText = (value) => value
   .replace(/&nbsp;/g, ' ')
   .replace(/&lt;/g, '<')
@@ -4220,6 +4397,10 @@ app.put('/api/tutor/courses/:id', requireTutor, async (request, response) => {
   if (id === null) return response.status(400).json({ message: 'Invalid course id.' })
   const course = parseCoursePayload(request.body)
   if (!course) return response.status(400).json({ message: 'Enter all required course details.' })
+  const scope = await loadLearningScope(request, { courseId: id })
+  if (!scope) return response.status(404).json({ message: 'Course not found.' })
+  const tagError = await getLearningTopicTagError(course.modules, scope)
+  if (tagError) return response.status(400).json({ message: tagError })
   try {
     const tutorId = await findTutorIdByName(course.tutor)
     if (!tutorId) return response.status(400).json({ message: 'Select an active tutor before saving the course.' })
@@ -4262,6 +4443,8 @@ app.put('/api/tutor/classes/:id', requireTutor, async (request, response) => {
   if (!existing) return response.status(404).json({ message: 'Class not found.' })
   const classPayload = parseClassPayload(request.body, existing.schedule?.startDate, deserializeJson(existing.modules) ?? [])
   if (!classPayload) return response.status(400).json({ message: 'Enter valid class details.' })
+  const tagError = await getLearningTopicTagError(classPayload.modules, { classId: id, syllabusGrade: classPayload.program_id === 'ministry-exam-prep' ? classPayload.grade_level : null })
+  if (tagError) return response.status(400).json({ message: tagError })
   const [updated] = await sql`UPDATE classes SET ${sql(classPayload)}, updated_at = NOW() WHERE id = ${id} AND tutor_id = ${request.tutorId} RETURNING id`
   if (!updated) return response.status(404).json({ message: 'Class not found.' })
   return response.json(await refreshClassStatus(id))
@@ -4274,6 +4457,10 @@ app.put('/api/tutor/courses/:id/curriculum', requireTutor, async (request, respo
   if (courseId === null || !Array.isArray(modules) || lessons.some((lesson) => !['video', 'article', 'interactive', 'quiz', 'stepByStepSolver'].includes(lesson?.type) || (lesson?.type === 'stepByStepSolver' && !isValidStepByStepSolverConfig(lesson.stepByStepSolver)))) {
     return response.status(400).json({ message: 'Enter valid course curriculum lessons.' })
   }
+  const scope = await loadLearningScope(request, { courseId })
+  if (!scope) return response.status(404).json({ message: 'Course not found.' })
+  const tagError = await getLearningTopicTagError(modules, scope)
+  if (tagError) return response.status(400).json({ message: tagError })
   const [updated] = await sql`
     UPDATE courses
     SET modules = ${JSON.stringify(modules)}::jsonb, updated_at = NOW()
@@ -4291,6 +4478,10 @@ app.put('/api/tutor/classes/:id/curriculum', requireTutor, async (request, respo
   if (classId === null || !Array.isArray(modules) || lessons.some((lesson) => !['video', 'article', 'interactive', 'quiz', 'live', 'stepByStepSolver'].includes(lesson?.type) || (lesson?.type === 'stepByStepSolver' && !isValidStepByStepSolverConfig(lesson.stepByStepSolver))) || !hasScheduledClassQuizzes(modules)) {
     return response.status(400).json({ message: 'Enter valid class curriculum lessons.' })
   }
+  const scope = await loadLearningScope(request, { classId })
+  if (!scope) return response.status(404).json({ message: 'Class not found.' })
+  const tagError = await getLearningTopicTagError(modules, scope)
+  if (tagError) return response.status(400).json({ message: tagError })
   const [updated] = await sql`
     UPDATE classes
     SET modules = ${JSON.stringify(modules)}::jsonb, updated_at = NOW()
@@ -4486,14 +4677,11 @@ app.get('/api/tutor/classes/:id/students', requireTutor, async (request, respons
   return response.json(await getTutorStudentProgress('class', classId))
 })
 
-const getTutorArticleInteractionReport = async (contentType, contentId) => {
+const getTutorContentStudents = (contentType, contentId) => {
   const contentCondition = contentType === 'class'
     ? sql`enrollments.class_id = ${contentId} AND enrollments.class_status = 'enrolled' AND classes.published = true`
     : sql`enrollments.course_id = ${contentId} AND enrollments.class_id IS NULL`
-  const [content] = contentType === 'class'
-    ? await sql`SELECT modules FROM classes WHERE id = ${contentId}`
-    : await sql`SELECT modules FROM courses WHERE id = ${contentId}`
-  const students = await sql`
+  return sql`
     SELECT enrollments.id::INTEGER AS id,
            COALESCE(NULLIF(users.name, ''), students.full_name) AS "studentName",
            users.email AS "studentEmail"
@@ -4505,6 +4693,13 @@ const getTutorArticleInteractionReport = async (contentType, contentId) => {
     WHERE ${contentCondition}
     ORDER BY enrollments.created_at DESC, enrollments.id DESC
   `
+}
+
+const getTutorArticleInteractionReport = async (contentType, contentId) => {
+  const [content] = contentType === 'class'
+    ? await sql`SELECT modules FROM classes WHERE id = ${contentId}`
+    : await sql`SELECT modules FROM courses WHERE id = ${contentId}`
+  const students = await getTutorContentStudents(contentType, contentId)
   const enrollmentIds = students.map((student) => student.id)
   const helpRequests = enrollmentIds.length ? await sql`
     SELECT enrollment_id::INTEGER AS "enrollmentId", lesson_id AS "lessonId", section_index AS "sectionIndex", question, flagged_at AS "flaggedAt", question_at AS "questionAt", status, teacher_reply AS "teacherReply", teacher_reply_at AS "teacherReplyAt"
@@ -4554,6 +4749,22 @@ app.get('/api/tutor/courses/:id/article-interactions', requireTutor, async (requ
   const [course] = await sql`SELECT id FROM courses WHERE id = ${courseId} AND tutor_id = ${request.tutorId}`
   if (!course) return response.status(404).json({ message: 'Course not found.' })
   return response.json({ articles: await getTutorArticleInteractionReport('course', courseId) })
+})
+
+app.get('/api/tutor/classes/:id/learning-diagnostics', requireTutor, async (request, response) => {
+  const classId = parseCourseId(request.params.id)
+  if (classId === null) return response.status(400).json({ message: 'Invalid class id.' })
+  const [classRecord] = await sql`SELECT id FROM classes WHERE id = ${classId} AND tutor_id = ${request.tutorId} AND published = true`
+  if (!classRecord) return response.status(404).json({ message: 'Class not found.' })
+  return response.json(await getTutorLearningDiagnostics('class', classId))
+})
+
+app.get('/api/tutor/courses/:id/learning-diagnostics', requireTutor, async (request, response) => {
+  const courseId = parseCourseId(request.params.id)
+  if (courseId === null) return response.status(400).json({ message: 'Invalid course id.' })
+  const [course] = await sql`SELECT id FROM courses WHERE id = ${courseId} AND tutor_id = ${request.tutorId}`
+  if (!course) return response.status(404).json({ message: 'Course not found.' })
+  return response.json(await getTutorLearningDiagnostics('course', courseId))
 })
 
 const tutorOwnsArticleHelpEnrollment = (tutorId) => sql`EXISTS (
@@ -6284,6 +6495,8 @@ app.post('/api/admin/users/:accountType/:id/reset-password', requireAdmin, async
 app.post('/api/admin/courses', requireAdmin, async (request, response) => {
   const course = parseCoursePayload(request.body)
   if (!course) return response.status(400).json({ message: 'Enter all required course details.' })
+  const tagError = await getLearningTopicTagError(course.modules, {})
+  if (tagError) return response.status(400).json({ message: tagError })
 
   try {
     const courseWithTutor = { ...course, tutor_id: await findTutorIdByName(course.tutor) }
@@ -6304,6 +6517,8 @@ app.put('/api/admin/courses/:id', requireAdmin, async (request, response) => {
 
   const course = parseCoursePayload(request.body)
   if (!course) return response.status(400).json({ message: 'Enter all required course details.' })
+  const tagError = await getLearningTopicTagError(course.modules, { courseId: id })
+  if (tagError) return response.status(400).json({ message: tagError })
 
   try {
     const courseWithTutor = { ...course, tutor_id: await findTutorIdByName(course.tutor) }
@@ -6451,6 +6666,81 @@ app.put('/api/admin/syllabus-topics/grades/:grade/order', requireAdmin, async (r
   if (!reordered) return response.status(400).json({ message: 'The topic order does not match this grade.' })
 
   return response.json(await sql`SELECT ${syllabusTopicColumns} FROM syllabus_topics WHERE grade = ${grade} ORDER BY position`)
+})
+
+const parseLearningLabel = (value) => {
+  const label = typeof value === 'string' ? value.trim() : ''
+  return label && label.length <= 100 ? label : null
+}
+
+const parseBodyId = (value) => Number.isInteger(value) && value > 0 ? value : null
+
+app.get('/api/learning-topics', requireAdminOrTutor, async (request, response) => {
+  const courseId = request.query.courseId === undefined ? undefined : parseCourseId(String(request.query.courseId))
+  const classId = request.query.classId === undefined ? undefined : parseCourseId(String(request.query.classId))
+  const syllabusGrade = request.query.syllabusGrade === undefined ? undefined : parseSyllabusGrade(request.query.syllabusGrade)
+  if (courseId === null || classId === null || syllabusGrade === null) return response.status(400).json({ message: 'Invalid learning topic scope.' })
+
+  let scope = null
+  if (courseId !== undefined || classId !== undefined) {
+    scope = await loadLearningScope(request, courseId !== undefined ? { courseId } : { classId })
+    if (!scope) return response.status(404).json({ message: 'Course or class not found.' })
+  } else if (syllabusGrade !== undefined) {
+    scope = { syllabusGrade }
+  } else {
+    return response.status(400).json({ message: 'Choose a course, class, or grade.' })
+  }
+  return response.json({ topics: await getAvailableLearningTopics(scope) })
+})
+
+app.post('/api/learning-topics', requireAdminOrTutor, async (request, response) => {
+  const title = parseLearningLabel(request.body?.title)
+  const courseId = parseBodyId(request.body?.courseId)
+  const classId = parseBodyId(request.body?.classId)
+  if (!title || (courseId === null) === (classId === null)) return response.status(400).json({ message: 'Enter a topic name and choose one course or class.' })
+
+  const scope = await loadLearningScope(request, courseId !== null ? { courseId } : { classId })
+  if (!scope) return response.status(404).json({ message: 'Course or class not found.' })
+  try {
+    const [created] = await sql`
+      INSERT INTO learning_topics ${sql(scope.courseId ? { course_id: scope.courseId, title } : { class_id: scope.classId, title })}
+      RETURNING id::INTEGER AS id, title
+    `
+    return response.status(201).json({ id: created.id, title: created.title, syllabusTopicId: null, subtopics: [] })
+  } catch (error) {
+    if (error.code === '23505') return response.status(409).json({ message: 'This course or class already has a topic with this name.' })
+    throw error
+  }
+})
+
+app.post('/api/learning-topics/:id/subtopics', requireAdminOrTutor, async (request, response) => {
+  const topicId = parseCourseId(request.params.id)
+  const title = parseLearningLabel(request.body?.title)
+  if (topicId === null || !title) return response.status(400).json({ message: 'Enter a subtopic name of 100 characters or fewer.' })
+
+  const [topic] = await sql`
+    SELECT id::INTEGER AS id, course_id::INTEGER AS "courseId", class_id::INTEGER AS "classId", syllabus_topic_id AS "syllabusTopicId"
+    FROM learning_topics
+    WHERE id = ${topicId}
+  `
+  if (!topic) return response.status(404).json({ message: 'Topic not found.' })
+  if (topic.syllabusTopicId !== null) {
+    if (request.userRole !== 'admin') return response.status(403).json({ message: 'Only admins can add subtopics to official syllabus topics.' })
+  } else if (!(await loadLearningScope(request, topic.courseId !== null ? { courseId: topic.courseId } : { classId: topic.classId }))) {
+    return response.status(404).json({ message: 'Topic not found.' })
+  }
+
+  try {
+    const [created] = await sql`
+      INSERT INTO learning_subtopics (topic_id, title)
+      VALUES (${topicId}, ${title})
+      RETURNING id::INTEGER AS id, topic_id::INTEGER AS "topicId", title
+    `
+    return response.status(201).json(created)
+  } catch (error) {
+    if (error.code === '23505') return response.status(409).json({ message: 'This topic already has a subtopic with this name.' })
+    throw error
+  }
 })
 
 const classPrograms = ['international-online-interactive', 'summer-camp', 'ministry-exam-prep', 'other']
@@ -6652,6 +6942,8 @@ app.post('/api/admin/classes', requireAdmin, async (request, response) => {
   const classPayload = parseClassPayload(request.body)
   if (!classPayload || (classPayload.program_id !== 'other' && classPayload.grade_level === null)) return response.status(400).json({ message: 'Enter valid class details.' })
   if (classPayload.program_id === 'ministry-exam-prep' && classPayload.exam_date === null) return response.status(400).json({ message: 'Enter an exam date for this Ministry Exam Prep class.' })
+  const tagError = await getLearningTopicTagError(classPayload.modules, { syllabusGrade: classPayload.program_id === 'ministry-exam-prep' ? classPayload.grade_level : null })
+  if (tagError) return response.status(400).json({ message: tagError })
   try {
     const [created] = await sql`
       INSERT INTO classes (program_id, title, cover, tutor_id, capacity, schedule, meeting_link, modules, price, published, status, grade_level, exam_date)
@@ -6673,11 +6965,14 @@ app.put('/api/admin/classes/:id', requireAdmin, async (request, response) => {
     if (!existing) return 'not-found'
     const classPayload = parseClassPayload(request.body, existing.schedule.startDate, deserializeJson(existing.modules) ?? [])
     if (!classPayload) return 'invalid'
+    const tagError = await getLearningTopicTagError(classPayload.modules, { classId: id, syllabusGrade: classPayload.program_id === 'ministry-exam-prep' ? classPayload.grade_level : null })
+    if (tagError) return { tagError }
     if (classPayload.schedule.startDate !== existing.schedule.startDate) return 'start-date-fixed'
     if (classPayload.schedule.endDate < existing.schedule.endDate) return 'end-date-cannot-shrink'
     const [updated] = await transaction`UPDATE classes SET ${transaction(classPayload)}, updated_at = NOW() WHERE id = ${id} RETURNING id`
     return updated ? 'saved' : 'not-found'
   })
+  if (saveResult.tagError) return response.status(400).json({ message: saveResult.tagError })
   if (saveResult === 'not-found') return response.status(404).json({ message: 'Class not found.' })
   if (saveResult === 'invalid') return response.status(400).json({ message: 'Enter valid class details.' })
   if (saveResult === 'start-date-fixed') return response.status(400).json({ message: 'The class start date cannot be changed.' })

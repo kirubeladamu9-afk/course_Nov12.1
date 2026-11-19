@@ -4,6 +4,9 @@ export interface ArticleCheckpoint {
   options: string[]
   correctOption: number
   explanation: string
+  topicId?: number | null
+  subtopicId?: number | null
+  customSubtopic?: string
 }
 
 export type LearnerArticleCheckpoint = Pick<ArticleCheckpoint, 'id' | 'question' | 'options'>

@@ -17,14 +17,111 @@ import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { type FC, useState } from 'react'
+import MenuItem from '@mui/material/MenuItem'
+import { type FC, useEffect, useState } from 'react'
 import { type ArticleCheckpoint } from '@/lib/article-checkpoints'
+import { createLearningSubtopic, createLearningTopic, getLearningTopics, type LearningTopic, type LearningTopicScope } from '@/services/api'
+import { useLearningTopicScope } from './learning-topic-scope'
 
 const MIN_OPTIONS = 2
 const MAX_OPTIONS = 6
+const MAX_LABEL_LENGTH = 100
+
+const toTopicFields = (checkpoint: ArticleCheckpoint): Pick<ArticleCheckpoint, 'topicId' | 'subtopicId' | 'customSubtopic'> => {
+  const topicId = checkpoint.topicId ?? null
+  if (topicId === null) return { topicId: null, subtopicId: null, customSubtopic: '' }
+  const subtopicId = checkpoint.subtopicId ?? null
+  return { topicId, subtopicId, customSubtopic: subtopicId === null ? (checkpoint.customSubtopic ?? '').trim() : '' }
+}
+
+const ownerScopeOf = (scope: LearningTopicScope | null): { courseId: number } | { classId: number } | null => {
+  if (!scope) return null
+  if ('courseId' in scope) return { courseId: scope.courseId }
+  if ('classId' in scope) return { classId: scope.classId }
+  return null
+}
+
+const TopicTagFields: FC<{ draft: ArticleCheckpoint; onChange: (patch: Partial<ArticleCheckpoint>) => void }> = ({ draft, onChange }) => {
+  const scope = useLearningTopicScope()
+  const scopeKey = scope ? JSON.stringify(scope) : ''
+  const ownerScope = ownerScopeOf(scope)
+  const [topics, setTopics] = useState<LearningTopic[]>([])
+  const [loadError, setLoadError] = useState('')
+  const [newTopicName, setNewTopicName] = useState('')
+  const [newSubtopicName, setNewSubtopicName] = useState('')
+  const [tagError, setTagError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (!scopeKey) return
+    let active = true
+    getLearningTopics(JSON.parse(scopeKey) as LearningTopicScope)
+      .then((loaded) => { if (active) setTopics(loaded) })
+      .catch((reason) => { if (active) setLoadError(reason instanceof Error ? reason.message : 'Unable to load topics.') })
+    return () => { active = false }
+  }, [scopeKey])
+
+  const selectedTopic = topics.find((topic) => topic.id === draft.topicId)
+  const hasListedSubtopic = draft.subtopicId !== null && draft.subtopicId !== undefined
+
+  const runTagAction = async (action: () => Promise<void>) => {
+    setIsSaving(true)
+    setTagError('')
+    try {
+      await action()
+    } catch (reason) {
+      setTagError(reason instanceof Error ? reason.message : 'Unable to save this topic.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const addTopic = () => runTagAction(async () => {
+    if (!ownerScope) return
+    const created = await createLearningTopic(ownerScope, newTopicName.trim())
+    setTopics((current) => [...current, created])
+    onChange({ topicId: created.id, subtopicId: null, customSubtopic: '' })
+    setNewTopicName('')
+  })
+
+  const addSubtopic = () => runTagAction(async () => {
+    if (draft.topicId === null || draft.topicId === undefined) return
+    const created = await createLearningSubtopic(draft.topicId, newSubtopicName.trim())
+    setTopics((current) => current.map((topic) => topic.id === created.topicId ? { ...topic, subtopics: [...topic.subtopics, created] } : topic))
+    onChange({ subtopicId: created.id, customSubtopic: '' })
+    setNewSubtopicName('')
+  })
+
+  if (!scope) return <Typography variant="body2" color="text.secondary">Save the course or class before tagging questions with topics.</Typography>
+
+  return <Stack spacing={1.5}>
+    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Learning topic</Typography>
+    {loadError && <Typography variant="body2" color="error">{loadError}</Typography>}
+    <TextField select fullWidth size="small" label="Topic" value={draft.topicId ?? ''} onChange={(event) => onChange({ topicId: event.target.value === '' ? null : Number(event.target.value), subtopicId: null, customSubtopic: '' })} helperText="Used for the tutor's learning diagnostics. Leave empty if this question does not map to a topic.">
+      <MenuItem value="">No topic</MenuItem>
+      {topics.map((topic) => <MenuItem key={topic.id} value={topic.id}>{topic.title}{topic.syllabusTopicId === null ? ' (course topic)' : ''}</MenuItem>)}
+    </TextField>
+    {draft.topicId !== null && draft.topicId !== undefined && <>
+      <TextField select fullWidth size="small" label="Subtopic" value={draft.subtopicId ?? ''} onChange={(event) => onChange({ subtopicId: event.target.value === '' ? null : Number(event.target.value), customSubtopic: '' })}>
+        <MenuItem value="">No listed subtopic</MenuItem>
+        {(selectedTopic?.subtopics ?? []).map((subtopic) => <MenuItem key={subtopic.id} value={subtopic.id}>{subtopic.title}</MenuItem>)}
+      </TextField>
+      <TextField fullWidth size="small" label="Custom subtopic (optional)" value={hasListedSubtopic ? '' : draft.customSubtopic ?? ''} disabled={hasListedSubtopic} onChange={(event) => onChange({ customSubtopic: event.target.value })} inputProps={{ maxLength: MAX_LABEL_LENGTH }} helperText="Only when no listed subtopic fits." />
+      <Stack direction="row" spacing={1} alignItems="center">
+        <TextField size="small" fullWidth label="New subtopic" value={newSubtopicName} onChange={(event) => setNewSubtopicName(event.target.value)} inputProps={{ maxLength: MAX_LABEL_LENGTH }} disabled={isSaving} />
+        <Button size="small" onClick={addSubtopic} disabled={isSaving || newSubtopicName.trim() === ''} sx={{ flexShrink: 0 }}>Add subtopic</Button>
+      </Stack>
+    </>}
+    {ownerScope && <Stack direction="row" spacing={1} alignItems="center">
+      <TextField size="small" fullWidth label="New course or class topic" value={newTopicName} onChange={(event) => setNewTopicName(event.target.value)} inputProps={{ maxLength: MAX_LABEL_LENGTH }} disabled={isSaving} />
+      <Button size="small" onClick={addTopic} disabled={isSaving || newTopicName.trim() === ''} sx={{ flexShrink: 0 }}>Add topic</Button>
+    </Stack>}
+    {tagError && <Typography variant="body2" color="error">{tagError}</Typography>}
+  </Stack>
+}
 
 export const ArticleCheckpointDialog: FC<{ checkpoint: ArticleCheckpoint; onSave: (checkpoint: ArticleCheckpoint) => void; onCancel: () => void }> = ({ checkpoint, onSave, onCancel }) => {
-  const [draft, setDraft] = useState(checkpoint)
+  const [draft, setDraft] = useState(() => ({ ...checkpoint, ...toTopicFields(checkpoint) }))
   const options = draft.options.map((option) => option.trim())
   const canSave = draft.question.trim() !== '' && options.length >= MIN_OPTIONS && options.every(Boolean) && draft.correctOption < options.length
 
@@ -54,11 +151,12 @@ export const ArticleCheckpointDialog: FC<{ checkpoint: ArticleCheckpoint; onSave
           <Button size="small" startIcon={<AddIcon />} disabled={draft.options.length >= MAX_OPTIONS} onClick={() => setDraft((current) => ({ ...current, options: [...current.options, ''] }))}>Add option</Button>
         </Stack>
         <TextField fullWidth multiline minRows={2} label="Explanation (optional)" helperText="Shown to students after they check their answer." value={draft.explanation} onChange={(event) => setDraft((current) => ({ ...current, explanation: event.target.value }))} inputProps={{ maxLength: 1000 }} />
+        <TopicTagFields draft={draft} onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))} />
       </Stack>
     </DialogContent>
     <DialogActions>
       <Button color="inherit" onClick={onCancel}>Cancel</Button>
-      <Button variant="contained" disabled={!canSave} onClick={() => onSave({ ...draft, question: draft.question.trim(), options, explanation: draft.explanation.trim() })}>Save question</Button>
+      <Button variant="contained" disabled={!canSave} onClick={() => onSave({ ...draft, ...toTopicFields(draft), question: draft.question.trim(), options, explanation: draft.explanation.trim() })}>Save question</Button>
     </DialogActions>
   </Dialog>
 }

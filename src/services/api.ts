@@ -818,6 +818,87 @@ export const updateTutorCourseCurriculum = (courseId: number, modules: AdminModu
 
 export const updateTutorClassCurriculum = (classId: number, modules: AdminModule[]) => updateTutorCurriculum(`/api/tutor/classes/${classId}/curriculum`, modules)
 
+export interface LearningSubtopic {
+  id: number
+  topicId: number
+  title: string
+}
+
+export interface LearningTopic {
+  id: number
+  title: string
+  syllabusTopicId: number | null
+  subtopics: LearningSubtopic[]
+}
+
+export type LearningTopicScope = { courseId: number } | { classId: number } | { syllabusGrade: number }
+
+export const getLearningTopics = async (scope: LearningTopicScope): Promise<LearningTopic[]> => {
+  const params = new URLSearchParams(Object.entries(scope).map(([key, value]) => [key, String(value)]))
+  const response = await requestApi(`/api/learning-topics?${params.toString()}`)
+  if (!response.ok) throw new Error(await getErrorMessage(response))
+  const body: { topics: LearningTopic[] } = await response.json()
+  return body.topics
+}
+
+export const createLearningTopic = async (scope: { courseId: number } | { classId: number }, title: string): Promise<LearningTopic> => {
+  const response = await requestApi('/api/learning-topics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...scope, title }) })
+  if (!response.ok) throw new Error(await getErrorMessage(response))
+  return response.json()
+}
+
+export const createLearningSubtopic = async (topicId: number, title: string): Promise<LearningSubtopic> => {
+  const response = await requestApi(`/api/learning-topics/${topicId}/subtopics`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) })
+  if (!response.ok) throw new Error(await getErrorMessage(response))
+  return response.json()
+}
+
+export type LearningLevel = 'strong' | 'developing' | 'needs_practice' | 'not_proven'
+
+export interface LearningOutcomeTotals {
+  correct: number
+  incorrect: number
+  skipped: number
+}
+
+export interface TutorLearningDiagnostics {
+  checkpointCount: number
+  studentsNeedingSupport: number
+  topics: Array<{
+    id: number
+    title: string
+    levels: Record<LearningLevel, number>
+    totals: LearningOutcomeTotals
+    misunderstood: boolean
+    subtopics: Array<{ key: string; title: string; levels: Record<LearningLevel, number>; totals: LearningOutcomeTotals; misunderstood: boolean }>
+  }>
+  students: Array<{
+    enrollmentId: number
+    studentName: string
+    studentEmail: string
+    needsSupport: boolean
+    topics: Array<LearningOutcomeTotals & {
+      topicId: number
+      title: string
+      answered: number
+      level: LearningLevel
+      subtopics: Array<LearningOutcomeTotals & { key: string; title: string; answered: number; level: LearningLevel }>
+    }>
+  }>
+}
+
+export const getTutorCourseLearningDiagnostics = async (courseId: number): Promise<TutorLearningDiagnostics> => {
+  const response = await requestApi(`/api/tutor/courses/${courseId}/learning-diagnostics`)
+  if (!response.ok) throw new Error(await getErrorMessage(response))
+  return response.json()
+}
+
+export const getTutorClassLearningDiagnostics = async (classId: number): Promise<TutorLearningDiagnostics> => {
+  const response = await requestApi(`/api/tutor/classes/${classId}/learning-diagnostics`)
+  if (!response.ok) throw new Error(await getErrorMessage(response))
+  return response.json()
+}
+
 export const getTutorCourseStudents = async (courseId: number): Promise<TutorClassStudent[]> => {
   const response = await requestApi(`/api/tutor/courses/${courseId}/students`)
   if (!response.ok) throw new Error(await getErrorMessage(response))
